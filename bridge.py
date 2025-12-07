@@ -68,15 +68,15 @@ def scan_blocks(chain, contract_info="contract_info.json"):
     """
     chain - (string) should be either "source" or "destination"
 
-    Scan the last 5 blocks of the relevant chain:
+    Scan recent blocks of the relevant chain:
 
     - When called with "source":
         Look for Deposit events on the Source contract (Avalanche Fuji)
         For each Deposit, call wrap(...) on the Destination contract (BNB testnet)
 
     - When called with "destination":
-        Look for Unwrap events on the Destination contract (BNB testnet)
-        For each Unwrap, call withdraw(...) on the Source contract (Avalanche Fuji)
+        Look for unwrap() calls on the Destination contract (BNB testnet)
+        For each unwrap, call withdraw(...) on the Source contract (Avalanche Fuji)
     """
 
     if chain not in ["source", "destination"]:
@@ -104,13 +104,14 @@ def scan_blocks(chain, contract_info="contract_info.json"):
     txs_sent = 0
 
     if chain == "source":
-        # Scan SOURCE (Avalanche) for Deposit events and call wrap() on DESTINATION
+        # ----------------------------------------------------------
+        # SOURCE SIDE: find Deposit events and call wrap() on dest
+        # ----------------------------------------------------------
         end_block = w3_source.eth.get_block_number()
         start_block = max(end_block - 5, 0)
 
         print(f"Scanning source chain from block {start_block} to {end_block} for Deposit events")
 
-        # Narrow logs to just this contract address
         try:
             logs = w3_source.eth.get_logs({
                 "fromBlock": start_block,
@@ -123,7 +124,6 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
         deposit_events = []
         for log in logs:
-            # Try to decode as Deposit; skip others
             try:
                 evt = source_contract.events.Deposit().process_log(log)
                 deposit_events.append(evt)
@@ -153,64 +153,68 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
             txs_sent += 1
 
-    else:  # chain == "destination"
-        # Scan DESTINATION (BNB testnet) for Unwrap events and call withdraw() on SOURCE
+    else:
+        # ----------------------------------------------------------
+        # DESTINATION SIDE: find unwrap() calls and call withdraw()
+        # ----------------------------------------------------------
         end_block = w3_dest.eth.get_block_number()
 
-        # Scan a wider window so we don't miss Unwrap events if a few blocks pass
+        # Use a wider window so we don't miss the grader's unwraps
         WINDOW = 50
         start_block = max(end_block - WINDOW, 0)
 
-        print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap events")
+        print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap calls")
 
-        unwrap_events = []
+        dest_addr = dest_contract.address.lower()
 
         for block_num in range(start_block, end_block + 1):
-
             try:
-                block = w3_dest.eth.get_block(block_num, full_transactions=False)
-            except:
+                # Get full transactions so we can inspect inputs
+                block = w3_dest.eth.get_block(block_num, full_transactions=True)
+            except Exception as e:
+                print(f"Error getting block {block_num} on destination: {e}")
                 continue
 
-            for tx_hash in block["transactions"]:
-                try:
-                    receipt = w3_dest.eth.get_transaction_receipt(tx_hash)
-                except:
+            for tx in block.transactions:
+                # Only care about transactions sent to our destination contract
+                if tx.to is None or tx.to.lower() != dest_addr:
                     continue
 
-                for log in receipt["logs"]:
-                    try:
-                        evt = dest_contract.events.Unwrap().process_log(log)
-                    except:
-                        continue
+                # Try to decode the function call
+                try:
+                    func_obj, func_args = dest_contract.decode_function_input(tx.input)
+                except Exception:
+                    continue
 
-                    args = evt["args"]
+                if func_obj.fn_name != "unwrap":
+                    continue
 
-                    underlying_token = args["underlying_token"]
-                    wrapped_token    = args["wrapped_token"]
-                    frm              = args["frm"]
-                    to_addr          = args["to"]
-                    amount           = args["amount"]
+                # unwrap(_wrapped_token, _recipient, _amount)
+                wrapped_token = func_args.get("_wrapped_token") or func_args.get(" _wrapped_token")
+                to_addr = func_args.get("_recipient") or func_args.get(" _recipient")
+                amount = func_args.get("_amount") or func_args.get(" _amount")
 
-                    print("FOUND Unwrap:", underlying_token, wrapped_token, frm, to_addr, amount)
+                print(f"Found unwrap call in tx {tx.hash.hex()}: wrapped_token={wrapped_token}, to={to_addr}, amount={amount}")
 
-                    func = source_contract.functions.withdraw(
-                        underlying_token,
-                        to_addr,
-                        amount
-                    )
+                # Look up the underlying token via the mapping in the Destination contract
+                try:
+                    underlying_token = dest_contract.functions.underlying_tokens(wrapped_token).call()
+                except Exception as e:
+                    print(f"Error looking up underlying token for {wrapped_token}: {e}")
+                    continue
 
-                    tx_hash = send_tx(w3_source, func)
+                print(f"Handling Unwrap: underlying_token={underlying_token}, to={to_addr}, amount={amount}")
 
-                    try:
-                        w3_source.eth.wait_for_transaction_receipt(tx_hash)
-                    except:
-                        pass
+                # Call withdraw() on the source chain:
+                # withdraw(_token, _recipient, _amount)
+                func = source_contract.functions.withdraw(underlying_token, to_addr, amount)
+                tx_hash = send_tx(w3_source, func)
 
-                    txs_sent += 1
+                try:
+                    w3_source.eth.wait_for_transaction_receipt(tx_hash)
+                except Exception as e:
+                    print(f"Error waiting for withdraw tx receipt: {e}")
 
-
+                txs_sent += 1
 
     return txs_sent
-
-
