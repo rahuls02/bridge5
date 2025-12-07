@@ -112,6 +112,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
         print(f"Scanning source chain from block {start_block} to {end_block} for Deposit events")
 
+        # Narrow logs to just this contract address
         try:
             logs = w3_source.eth.get_logs({
                 "fromBlock": start_block,
@@ -124,6 +125,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
         deposit_events = []
         for log in logs:
+            # Try to decode as Deposit; skip others
             try:
                 evt = source_contract.events.Deposit().process_log(log)
                 deposit_events.append(evt)
