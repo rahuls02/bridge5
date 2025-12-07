@@ -59,7 +59,7 @@ def send_tx(w3, func):
     })
 
     signed = w3.eth.account.sign_transaction(tx, private_key=WARDEN_PRIVATE_KEY)
-    tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
     print(f"Sent tx: {tx_hash.hex()}")
     return tx_hash
 
