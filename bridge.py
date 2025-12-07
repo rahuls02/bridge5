@@ -124,7 +124,6 @@ def scan_blocks(chain, contract_info="contract_info.json"):
         print(f"Found {len(deposit_events)} Deposit events")
 
         for evt in deposit_events:
-            # Avoid relying on exact arg names; use positional order from ABI
             args_list = list(evt["args"].values())
             if len(args_list) < 3:
                 continue
@@ -135,7 +134,14 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
             # Call wrap() on destination chain
             func = dest_contract.functions.wrap(token, recipient, amount)
-            send_tx(w3_dest, func)
+            tx_hash = send_tx(w3_dest, func)
+
+            # Wait for confirmation so the nonce increases before next tx
+            try:
+                w3_dest.eth.wait_for_transaction_receipt(tx_hash)
+            except Exception as e:
+                print(f"Error waiting for wrap tx receipt: {e}")
+
             txs_sent += 1
 
     else:  # chain == "destination"
@@ -163,7 +169,14 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
             # Call withdraw() on source chain
             func = source_contract.functions.withdraw(underlying_token, to_addr, amount)
-            send_tx(w3_source, func)
+            tx_hash = send_tx(w3_source, func)
+
+            # Wait for confirmation so the nonce increases before next tx
+            try:
+                w3_source.eth.wait_for_transaction_receipt(tx_hash)
+            except Exception as e:
+                print(f"Error waiting for withdraw tx receipt: {e}")
+
             txs_sent += 1
 
     return txs_sent
