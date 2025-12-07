@@ -115,11 +115,25 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
         print(f"Scanning source chain from block {start_block} to {end_block} for Deposit events")
 
-        # web3.py v6 style: use .get_logs instead of .createFilter
-        deposit_events = source_contract.events.Deposit.get_logs(
-            from_block=start_block,
-            to_block=end_block
-        )
+        # Narrow logs to just this contract address
+        try:
+            logs = w3_source.eth.get_logs({
+                "fromBlock": start_block,
+                "toBlock": end_block,
+                "address": source_contract.address,
+            })
+        except Exception as e:
+            print(f"Error getting logs on source: {e}")
+            return txs_sent
+
+        deposit_events = []
+        for log in logs:
+            # Try to decode as Deposit; skip others
+            try:
+                evt = source_contract.events.Deposit().process_log(log)
+                deposit_events.append(evt)
+            except Exception:
+                continue
 
         print(f"Found {len(deposit_events)} Deposit events")
 
@@ -151,10 +165,25 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
         print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap events")
 
-        unwrap_events = dest_contract.events.Unwrap.get_logs(
-            from_block=start_block,
-            to_block=end_block
-        )
+        # Narrow logs to just this contract address
+        try:
+            logs = w3_dest.eth.get_logs({
+                "fromBlock": start_block,
+                "toBlock": end_block,
+                "address": dest_contract.address,
+            })
+        except Exception as e:
+            print(f"Error getting logs on destination: {e}")
+            return txs_sent
+
+        unwrap_events = []
+        for log in logs:
+            # Try to decode as Unwrap; skip others
+            try:
+                evt = dest_contract.events.Unwrap().process_log(log)
+                unwrap_events.append(evt)
+            except Exception:
+                continue
 
         print(f"Found {len(unwrap_events)} Unwrap events")
 
@@ -180,3 +209,4 @@ def scan_blocks(chain, contract_info="contract_info.json"):
             txs_sent += 1
 
     return txs_sent
+
