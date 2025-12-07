@@ -154,59 +154,66 @@ def scan_blocks(chain, contract_info="contract_info.json"):
             txs_sent += 1
 
     else:  # chain == "destination"
-      # Scan DESTINATION (BNB testnet) for Unwrap events and call withdraw() on SOURCE
-      end_block = w3_dest.eth.get_block_number()
+        # Scan DESTINATION (BNB testnet) for Unwrap events and call withdraw() on SOURCE
+        end_block = w3_dest.eth.get_block_number()
+        start_block = max(end_block - 5, 0)
 
-      # We'll try progressively smaller windows to avoid 'limit exceeded'
-      unwrap_events = []
-      last_error = None
+        print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap events")
 
-      for window in [5, 2, 1]:
-          start_block = max(end_block - window, 0)
-          print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap events")
+        unwrap_events = []
 
-          try:
-              # Use the event helper, which filters by this contract's address + event topic
-              unwrap_events = dest_contract.events.Unwrap.get_logs(
-                  from_block=start_block,
-                  to_block=end_block
-              )
-              # If we got here, the call succeeded; break out of the window loop
-              break
-          except Exception as e:
-              last_error = e
-              print(f"Error getting Unwrap logs on destination with window {window}: {e}")
-              unwrap_events = []
+        # Instead of eth_getLogs (which hits 'limit exceeded'),
+        # walk each block and decode logs from transaction receipts
+        for block_num in range(start_block, end_block + 1):
+            try:
+                block = w3_dest.eth.get_block(block_num, full_transactions=False)
+            except Exception as e:
+                print(f"Error getting block {block_num} on destination: {e}")
+                continue
 
-      # If we never succeeded, bail out
-      if not unwrap_events and last_error is not None:
-          print(f"Error getting Unwrap logs on destination: {last_error}")
-          return txs_sent
+            # block["transactions"] is a list of tx hashes (HexBytes)
+            for tx_hash in block["transactions"]:
+                try:
+                    receipt = w3_dest.eth.get_transaction_receipt(tx_hash)
+                except Exception as e:
+                    # Skip receipts we can't fetch
+                    print(f"Error getting receipt for tx {tx_hash.hex()} on destination: {e}")
+                    continue
 
-      print(f"Found {len(unwrap_events)} Unwrap events")
+                for log in receipt["logs"]:
+                    # Only consider logs from our destination contract
+                    if log["address"] != dest_contract.address:
+                        continue
+                    try:
+                        evt = dest_contract.events.Unwrap().process_log(log)
+                        unwrap_events.append(evt)
+                    except Exception:
+                        # Not an Unwrap event; ignore
+                        continue
 
-      for evt in unwrap_events:
-          args_list = list(evt["args"].values())
-          if len(args_list) < 3:
-              continue
+        print(f"Found {len(unwrap_events)} Unwrap events")
 
-          underlying_token, to_addr, amount = args_list[0], args_list[1], args_list[2]
+        for evt in unwrap_events:
+            args_list = list(evt["args"].values())
+            if len(args_list) < 3:
+                continue
 
-          print(f"Handling Unwrap: underlying_token={underlying_token}, to={to_addr}, amount={amount}")
+            underlying_token, to_addr, amount = args_list[0], args_list[1], args_list[2]
 
-          # Call withdraw() on source chain
-          func = source_contract.functions.withdraw(underlying_token, to_addr, amount)
-          tx_hash = send_tx(w3_source, func)
+            print(f"Handling Unwrap: underlying_token={underlying_token}, to={to_addr}, amount={amount}")
 
-          # Wait for confirmation so the nonce increases before next tx
-          try:
-              w3_source.eth.wait_for_transaction_receipt(tx_hash)
-          except Exception as e:
-              print(f"Error waiting for withdraw tx receipt: {e}")
+            # Call withdraw() on source chain
+            func = source_contract.functions.withdraw(underlying_token, to_addr, amount)
+            tx_hash = send_tx(w3_source, func)
 
-          txs_sent += 1
+            # Wait for confirmation so the nonce increases before next tx
+            try:
+                w3_source.eth.wait_for_transaction_receipt(tx_hash)
+            except Exception as e:
+                print(f"Error waiting for withdraw tx receipt: {e}")
 
-
+            txs_sent += 1
 
     return txs_sent
+
 
