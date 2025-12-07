@@ -165,53 +165,49 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
         unwrap_events = []
 
-        # Walk each block and decode logs from transaction receipts
         for block_num in range(start_block, end_block + 1):
+
             try:
                 block = w3_dest.eth.get_block(block_num, full_transactions=False)
-            except Exception as e:
-                print(f"Error getting block {block_num} on destination: {e}")
+            except:
                 continue
 
-            # block["transactions"] is a list of tx hashes (HexBytes)
             for tx_hash in block["transactions"]:
                 try:
                     receipt = w3_dest.eth.get_transaction_receipt(tx_hash)
-                except Exception as e:
-                    # Skip receipts we can't fetch
-                    print(f"Error getting receipt for tx {tx_hash.hex()} on destination: {e}")
+                except:
                     continue
 
                 for log in receipt["logs"]:
-                    # Try to decode as Unwrap; ignore anything that doesn't match
                     try:
                         evt = dest_contract.events.Unwrap().process_log(log)
-                        unwrap_events.append(evt)
-                    except Exception:
+                    except:
                         continue
 
-        print(f"Found {len(unwrap_events)} Unwrap events")
+                    args = evt["args"]
 
-        for evt in unwrap_events:
-            args_list = list(evt["args"].values())
-            if len(args_list) < 3:
-                continue
+                    underlying_token = args["underlying_token"]
+                    wrapped_token    = args["wrapped_token"]
+                    frm              = args["frm"]
+                    to_addr          = args["to"]
+                    amount           = args["amount"]
 
-            underlying_token, to_addr, amount = args_list[0], args_list[1], args_list[2]
+                    print("FOUND Unwrap:", underlying_token, wrapped_token, frm, to_addr, amount)
 
-            print(f"Handling Unwrap: underlying_token={underlying_token}, to={to_addr}, amount={amount}")
+                    func = source_contract.functions.withdraw(
+                        underlying_token,
+                        to_addr,
+                        amount
+                    )
 
-            # Call withdraw() on source chain
-            func = source_contract.functions.withdraw(underlying_token, to_addr, amount)
-            tx_hash = send_tx(w3_source, func)
+                    tx_hash = send_tx(w3_source, func)
 
-            # Wait for confirmation so the nonce increases before next tx
-            try:
-                w3_source.eth.wait_for_transaction_receipt(tx_hash)
-            except Exception as e:
-                print(f"Error waiting for withdraw tx receipt: {e}")
+                    try:
+                        w3_source.eth.wait_for_transaction_receipt(tx_hash)
+                    except:
+                        pass
 
-            txs_sent += 1
+                    txs_sent += 1
 
 
 
