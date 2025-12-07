@@ -111,7 +111,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
         print(f"Scanning source chain from block {start_block} to {end_block} for Deposit events")
 
         # web3.py v6 style: use .get_logs instead of .createFilter
-        deposit_events = source_contract.events.Deposit().get_logs(
+        deposit_events = source_contract.events.Deposit.get_logs(
             fromBlock=start_block,
             toBlock=end_block
         )
@@ -140,7 +140,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
 
         print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap events")
 
-        unwrap_events = dest_contract.events.Unwrap().get_logs(
+        unwrap_events = dest_contract.events.Unwrap.get_logs(
             fromBlock=start_block,
             toBlock=end_block
         )
