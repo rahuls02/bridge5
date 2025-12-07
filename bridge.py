@@ -161,29 +161,20 @@ def scan_blocks(chain, contract_info="contract_info.json"):
     else:  # chain == "destination"
         # Scan DESTINATION (BNB testnet) for Unwrap events and call withdraw() on SOURCE
         end_block = w3_dest.eth.get_block_number()
-        start_block = max(end_block - 5, 0)
+        # Use a slightly wider window to be sure we see the Unwraps
+        start_block = max(end_block - 50, 0)
 
         print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap events")
 
-        # Narrow logs to just this contract address
+        # Use the event helper, which automatically filters by this contract's address
         try:
-            logs = w3_dest.eth.get_logs({
-                "fromBlock": start_block,
-                "toBlock": end_block,
-                "address": dest_contract.address,
-            })
+            unwrap_events = dest_contract.events.Unwrap.get_logs(
+                from_block=start_block,
+                to_block=end_block
+            )
         except Exception as e:
-            print(f"Error getting logs on destination: {e}")
+            print(f"Error getting Unwrap logs on destination: {e}")
             return txs_sent
-
-        unwrap_events = []
-        for log in logs:
-            # Try to decode as Unwrap; skip others
-            try:
-                evt = dest_contract.events.Unwrap().process_log(log)
-                unwrap_events.append(evt)
-            except Exception:
-                continue
 
         print(f"Found {len(unwrap_events)} Unwrap events")
 
@@ -207,6 +198,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
                 print(f"Error waiting for withdraw tx receipt: {e}")
 
             txs_sent += 1
+
 
     return txs_sent
 
