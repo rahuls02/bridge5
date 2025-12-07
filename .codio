@@ -1,0 +1,18 @@
+{
+// Configure your Run and Preview buttons here.
+
+// Run button configuration
+  "commands": {
+        "Run Test Cases": "clear; python3 /home/codio/workspace/.guides/tests/runtests.py"
+  },
+
+// Preview button configuration
+  "preview": {
+        "Project Index (static)": "https://{{domain}}/{{index}}",
+        "Current File (static)": "https://{{domain}}/{{filepath}}",
+        "Box URL": "http://{{domain3000}}/",
+        "Box URL SSL": "https://{{domain3000}}/"
+  },
+  "autogradeTestScripts": [".guides/secure/autograde.py"],
+  "debugger": [{"type":"PYTHON3","command":".guides/tests/runtests.py","before":"","uuid":"88940e19-332c-7ab8-0602-e7051730f8f7","name":"Debug"}]
+}
