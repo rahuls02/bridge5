@@ -156,14 +156,16 @@ def scan_blocks(chain, contract_info="contract_info.json"):
     else:  # chain == "destination"
         # Scan DESTINATION (BNB testnet) for Unwrap events and call withdraw() on SOURCE
         end_block = w3_dest.eth.get_block_number()
-        start_block = max(end_block - 5, 0)
+
+        # Scan a wider window so we don't miss Unwrap events if a few blocks pass
+        WINDOW = 50
+        start_block = max(end_block - WINDOW, 0)
 
         print(f"Scanning destination chain from block {start_block} to {end_block} for Unwrap events")
 
         unwrap_events = []
 
-        # Instead of eth_getLogs (which hits 'limit exceeded'),
-        # walk each block and decode logs from transaction receipts
+        # Walk each block and decode logs from transaction receipts
         for block_num in range(start_block, end_block + 1):
             try:
                 block = w3_dest.eth.get_block(block_num, full_transactions=False)
@@ -181,8 +183,8 @@ def scan_blocks(chain, contract_info="contract_info.json"):
                     continue
 
                 for log in receipt["logs"]:
-                    # Only consider logs from our destination contract
-                    if log["address"] != dest_contract.address:
+                    # Only consider logs from our destination contract (normalize case)
+                    if log["address"].lower() != dest_contract.address.lower():
                         continue
                     try:
                         evt = dest_contract.events.Unwrap().process_log(log)
@@ -213,6 +215,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
                 print(f"Error waiting for withdraw tx receipt: {e}")
 
             txs_sent += 1
+
 
     return txs_sent
 
