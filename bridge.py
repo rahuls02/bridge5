@@ -183,14 +183,11 @@ def scan_blocks(chain, contract_info="contract_info.json"):
                     continue
 
                 for log in receipt["logs"]:
-                    # Only consider logs from our destination contract (normalize case)
-                    if log["address"].lower() != dest_contract.address.lower():
-                        continue
+                    # Try to decode as Unwrap; ignore anything that doesn't match
                     try:
                         evt = dest_contract.events.Unwrap().process_log(log)
                         unwrap_events.append(evt)
                     except Exception:
-                        # Not an Unwrap event; ignore
                         continue
 
         print(f"Found {len(unwrap_events)} Unwrap events")
@@ -215,6 +212,7 @@ def scan_blocks(chain, contract_info="contract_info.json"):
                 print(f"Error waiting for withdraw tx receipt: {e}")
 
             txs_sent += 1
+
 
 
     return txs_sent
