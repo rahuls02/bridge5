@@ -42,28 +42,23 @@ def get_contract_info(chain, contract_info):
     return contracts[chain]
 
 
-def send_tx(w3, func):
-    """
-    Build, sign, and send a transaction for the given contract function call.
-    Returns the transaction hash.
-    """
+def send_tx(w3: Web3, func):
     account = w3.eth.account.from_key(WARDEN_PRIVATE_KEY)
     from_addr = account.address
 
     tx = func.build_transaction({
         "from": from_addr,
-        "nonce": w3.eth.get_transaction_count(from_addr),
+        # Use 'pending' so we always get the next correct nonce
+        "nonce": w3.eth.get_transaction_count(from_addr, "pending"),
         "gasPrice": w3.eth.gas_price,
         "chainId": w3.eth.chain_id,
-        "gas": 500000,  # conservative gas limit
+        "gas": 500000,
     })
 
     signed = w3.eth.account.sign_transaction(tx, private_key=WARDEN_PRIVATE_KEY)
-
     raw = getattr(signed, "rawTransaction", None)
     if raw is None:
         raw = signed.raw_transaction
-
     tx_hash = w3.eth.send_raw_transaction(raw)
     print(f"Sent tx: {tx_hash.hex()}")
     return tx_hash
